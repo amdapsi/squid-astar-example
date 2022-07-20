@@ -3,6 +3,7 @@ import { Store, TypeormDatabase } from "@subsquid/typeorm-store";
 import {
   BatchContext,
   BatchProcessorItem,
+  EvmLogEvent,
   SubstrateBatchProcessor,
   SubstrateBlock,
 } from "@subsquid/substrate-processor";
@@ -67,11 +68,11 @@ type TransferData = {
 
 function handleTransfer(
   block: SubstrateBlock,
-  event: any // don't like this, but complains about merged type if you put EvmLogEvent
+  event: EvmLogEvent
 ): TransferData {
   const { from, to, tokenId } = erc721.events[
     "Transfer(address,address,uint256)"
-  ].decode(event.args);
+  ].decode(event.args); 
 
   const transfer: TransferData = {
     id: event.id,
@@ -91,8 +92,12 @@ async function saveTransfers(ctx: Context, transfersData: TransferData[]) {
   const tokensIds: Set<string> = new Set();
   const ownersIds: Set<string> = new Set();
 
+  function getCollectionAndTokenId (transferData: TransferData): string{
+    return `${contractMapping.get(transferData.contractAddress)?.contractModel.symbol || ""}-${transferData.token}`;
+  }
+
   for (const transferData of transfersData) {
-    tokensIds.add(transferData.token);
+    tokensIds.add(getCollectionAndTokenId(transferData));
     ownersIds.add(transferData.from);
     ownersIds.add(transferData.to);
   }
@@ -126,10 +131,10 @@ async function saveTransfers(ctx: Context, transfersData: TransferData[]) {
       owners.set(to.id, to);
     }
 
-    let token = tokens.get(`${contractMapping.get(transferData.contractAddress)?.contractModel.symbol || ""}-${transferData.token}`);
+    let token = tokens.get(getCollectionAndTokenId(transferData));
     if (token == null) {
       token = new Token({
-        id: `${contractMapping.get(transferData.contractAddress)?.contractModel.symbol || ""}-${transferData.token}`,
+        id: getCollectionAndTokenId(transferData),
         uri: await getTokenURI(transferData.token, transferData.contractAddress),
         contract: await getContractEntity(ctx.store, transferData.contractAddress),
       });
